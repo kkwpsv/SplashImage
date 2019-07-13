@@ -12,7 +12,7 @@ using Lsj.Util.Win32.Marshals;
 
 namespace SplashImage
 {
-    class Program
+    public class Program
     {
         /// <summary>
         /// Splash File Name
@@ -85,73 +85,87 @@ namespace SplashImage
         /// </summary>
         private static IntPtr _memoryBitmap = IntPtr.Zero;
 
-        private static void Main(string[] args)
+        /// <summary>
+        /// GDI+ Token
+        /// </summary>
+        private static UIntPtr _gdipToken = UIntPtr.Zero;
+
+        public static void Main(string[] args)
         {
-            var hInstance = Process.GetCurrentProcess().Handle;
-
-            using var marshal = new StringToIntPtrMarshaler(WindowClass);
-            var wndclass = new WNDCLASSEX
+            try
             {
-                cbSize = (uint)Marshal.SizeOf(typeof(WNDCLASSEX)),
-                style = ClassStyles.CS_DBLCLKS,
-                lpfnWndProc = WindowProc,
-                cbClsExtra = 0,
-                cbWndExtra = 0,
-                hInstance = hInstance,
-                hIcon = LoadIcon(hInstance, SystemIcons.IDI_APPLICATION),
-                hCursor = LoadCursor(IntPtr.Zero, SystemCursors.IDC_ARROW),
-                hbrBackground = (IntPtr)BackgroundColors.COLOR_WINDOW,
-                lpszMenuName = IntPtr.Zero,
-                lpszClassName = marshal.GetPtr(),
-            };
+                var hInstance = Process.GetCurrentProcess().Handle;
 
-            if (RegisterClassEx(ref wndclass) != 0)
-            {
-                _window = CreateWindowEx(WindowStylesEx.WS_EX_LAYERED, WindowClass, WindowName, WindowStyles.WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT,
-                    CW_USEDEFAULT, CW_USEDEFAULT, IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero);
-                if (_window != IntPtr.Zero)
+                using var marshal = new StringToIntPtrMarshaler(WindowClass);
+                var wndclass = new WNDCLASSEX
                 {
-                    _windowDC = GetDC(_window);
+                    cbSize = (uint)Marshal.SizeOf(typeof(WNDCLASSEX)),
+                    style = ClassStyles.CS_DBLCLKS,
+                    lpfnWndProc = WindowProc,
+                    cbClsExtra = 0,
+                    cbWndExtra = 0,
+                    hInstance = hInstance,
+                    hIcon = LoadIcon(hInstance, SystemIcons.IDI_APPLICATION),
+                    hCursor = LoadCursor(IntPtr.Zero, SystemCursors.IDC_ARROW),
+                    hbrBackground = (IntPtr)BackgroundColors.COLOR_WINDOW,
+                    lpszMenuName = IntPtr.Zero,
+                    lpszClassName = marshal.GetPtr(),
+                };
 
-                    var dpi = GetDeviceCaps(_screenDC, DeviceCapIndexes.LOGPIXELSX);
-                    SetPositionAndSize(dpi);
-                    ShowWindow(_window, ShowWindowCommands.SW_SHOWNORMAL);
+                if (RegisterClassEx(ref wndclass) != 0)
+                {
+                    _window = CreateWindowEx(WindowStylesEx.WS_EX_LAYERED, WindowClass, WindowName, WindowStyles.WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT,
+                        CW_USEDEFAULT, CW_USEDEFAULT, IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero);
+                    if (_window != IntPtr.Zero)
+                    {
+                        _windowDC = GetDC(_window);
 
-                    var startupInput = new GdiplusStartupInput
-                    {
-                        GdiplusVersion = 1,
-                        DebugEventCallback = IntPtr.Zero,
-                        SuppressBackgroundThread = false,
-                        SuppressExternalCodecs = false,
-                    };
-                    if (GdiplusStartup(out var token, ref startupInput, out _) == GpStatus.Ok && GdipLoadImageFromFile(SplashFile, out _splashImage) == GpStatus.Ok)
-                    {
-                        DrawImage();
-                        while (GetMessage(out var msg, IntPtr.Zero, 0, 0) != 0)
+                        var dpi = GetDeviceCaps(_screenDC, DeviceCapIndexes.LOGPIXELSX);
+                        SetPositionAndSize(dpi);
+                        ShowWindow(_window, ShowWindowCommands.SW_SHOWNORMAL);
+
+                        var startupInput = new GdiplusStartupInput
                         {
-                            TranslateMessage(ref msg);
-                            DispatchMessage(ref msg);
+                            GdiplusVersion = 1,
+                            DebugEventCallback = IntPtr.Zero,
+                            SuppressBackgroundThread = false,
+                            SuppressExternalCodecs = false,
+                        };
+                        if (GdiplusStartup(out _gdipToken, ref startupInput, out _) == GpStatus.Ok && GdipLoadImageFromFile(SplashFile, out _splashImage) == GpStatus.Ok)
+                        {
+                            DrawImage();
+                            while (GetMessage(out var msg, IntPtr.Zero, 0, 0) != 0)
+                            {
+                                try
+                                {
+                                    TranslateMessage(ref msg);
+                                    DispatchMessage(ref msg);
+                                }
+                                catch (Exception)
+                                {
+                                    throw;
+                                }
+                            }
                         }
-
-                        GdiplusShutdown(token);
+                        else
+                        {
+                            //TODO: throw GDI+ Error
+                        }
                     }
                     else
                     {
-                        //TODO: throw GDI+ Error
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
                     }
-                    DeleteObject(_memoryBitmap);
-                    DeleteDC(_memoryDC);
-                    ReleaseDC(_window, _windowDC);
-                    ReleaseDC(IntPtr.Zero, _screenDC);
                 }
                 else
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
+
             }
-            else
+            finally
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                ReleaseAllResource();
             }
         }
 
@@ -218,6 +232,21 @@ namespace SplashImage
         }
 
         /// <summary>
+        /// Release All Resource
+        /// </summary>
+        private static void ReleaseAllResource()
+        {
+            if (_gdipToken != null)
+            {
+                GdiplusShutdown(_gdipToken);
+            }
+            DeleteObject(_memoryBitmap);
+            DeleteDC(_memoryDC);
+            ReleaseDC(_window, _windowDC);
+            ReleaseDC(IntPtr.Zero, _screenDC);
+        }
+
+        /// <summary>
         /// Window Proc
         /// </summary>
         /// <param name="hWnd"></param>
@@ -227,17 +256,27 @@ namespace SplashImage
         /// <returns></returns>
         private static IntPtr WindowProc(IntPtr hWnd, WindowsMessages msg, UIntPtr wParam, IntPtr lParam)
         {
-            switch (msg)
+            try
             {
-                case WindowsMessages.WM_DESTROY:
-                    PostQuitMessage(0);
-                    return IntPtr.Zero;
-                case WindowsMessages.WM_DPICHANGED:
-                    SetPositionAndSize((int)(wParam.ToUInt32() >> 16));
-                    DrawImage();
-                    return IntPtr.Zero;
-                default:
-                    return DefWindowProc(hWnd, msg, wParam, lParam);
+                switch (msg)
+                {
+                    case WindowsMessages.WM_DESTROY:
+                        PostQuitMessage(0);
+                        return IntPtr.Zero;
+                    case WindowsMessages.WM_DPICHANGED:
+                        SetPositionAndSize((int)(wParam.ToUInt32() >> 16));
+                        DrawImage();
+                        return IntPtr.Zero;
+                    default:
+                        return DefWindowProc(hWnd, msg, wParam, lParam);
+                }
+            }
+            finally
+            {
+                //The finally in Main won't run if exception is thrown in this method.
+                //This may be because this method was called by system code.
+                //So we must handle exception here.
+                ReleaseAllResource();
             }
         }
     }
