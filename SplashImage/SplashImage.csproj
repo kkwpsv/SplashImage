@@ -8,6 +8,6 @@
     <StartupObject />
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Lsj.Util.Win32" Version="1.0.1" />
+    <PackageReference Include="Lsj.Util.Win32" Version="1.0.2" />
   </ItemGroup>
 </Project>

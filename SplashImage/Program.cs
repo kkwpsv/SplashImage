@@ -120,7 +120,7 @@ namespace SplashImage
                     {
                         _windowDC = GetDC(_window);
 
-                        var dpi = GetDeviceCaps(_screenDC, DeviceCapIndexes.LOGPIXELSX);
+                        var dpi = GetDeviceCaps(_windowDC, DeviceCapIndexes.LOGPIXELSX);
                         SetPositionAndSize(dpi);
                         ShowWindow(_window, ShowWindowCommands.SW_SHOWNORMAL);
 
@@ -271,12 +271,13 @@ namespace SplashImage
                         return DefWindowProc(hWnd, msg, wParam, lParam);
                 }
             }
-            finally
+            catch
             {
                 //The finally in Main won't run if exception is thrown in this method.
                 //This may be because this method was called by system code.
                 //So we must handle exception here.
-                ReleaseAllResource();
+                DestroyWindow(_window);
+                return IntPtr.Zero;
             }
         }
     }
