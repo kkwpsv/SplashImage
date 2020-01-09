@@ -114,14 +114,13 @@ namespace SplashImage
 
                 if (RegisterClassEx(ref wndclass) != 0)
                 {
-                    _window = CreateWindowEx(WindowStylesEx.WS_EX_LAYERED, WindowClass, WindowName, WindowStyles.WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT,
+                    _window = CreateWindowEx(WindowStylesEx.WS_EX_LAYERED, WindowClass, WindowName, WindowStyles.WS_OVERLAPPED, CW_USEDEFAULT, CW_USEDEFAULT,
                         CW_USEDEFAULT, CW_USEDEFAULT, IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero);
                     if (_window != IntPtr.Zero)
                     {
                         _windowDC = GetDC(_window);
 
-                        var dpi = GetDeviceCaps(_windowDC, DeviceCapIndexes.LOGPIXELSX);
-                        SetPositionAndSize(dpi);
+                        SetPositionAndSize();
                         ShowWindow(_window, ShowWindowCommands.SW_SHOWNORMAL);
 
                         var startupInput = new GdiplusStartupInput
@@ -173,13 +172,45 @@ namespace SplashImage
         /// Set Window Position And Size
         /// </summary>
         /// <param name="dpi"></param>
-        private static void SetPositionAndSize(int dpi)
+        private static void SetPositionAndSize(int dpi = 0)
         {
+            var screenLeft = 0;
+            var screenTop = 0;
             var screenWidth = GetSystemMetrics(SystemMetric.SM_CXSCREEN);
             var screenHeight = GetSystemMetrics(SystemMetric.SM_CYSCREEN);
+
+            var monitor = MonitorFromWindow(_window, MonitorDefaultFlags.MONITOR_DEFAULTTONULL);
+            if (monitor != null)
+            {
+                var info = new MONITORINFOEX();
+                info.cbSize = (uint)Marshal.SizeOf(info);
+                if (GetMonitorInfo(monitor, ref info))
+                {
+                    screenLeft = info.rcMonitor.left;
+                    screenTop = info.rcMonitor.top;
+                    screenWidth = info.rcMonitor.right - info.rcMonitor.left;
+                    screenHeight = info.rcMonitor.bottom - info.rcMonitor.top;
+                }
+            }
+
+            if (dpi == 0)
+            {
+                var osVersion = Environment.OSVersion.Version;
+                if (osVersion > new Version(10, 0, 1607))
+                {
+                    dpi = (int)GetDpiForWindow(_window);
+                }
+                else
+                {
+                    dpi = GetDeviceCaps(_windowDC, DeviceCapIndexes.LOGPIXELSX);
+                }
+            }
+
+
             var windowWidth = ImageWidth * dpi / 96;
             var windowHeight = ImageHeight * dpi / 96;
-            SetWindowPos(_window, HWND_TOPMOST, (screenWidth - windowWidth) / 2, (screenHeight - windowHeight) / 2, windowWidth, windowHeight, 0);
+
+            SetWindowPos(_window, HWND_TOPMOST, (screenWidth - windowWidth) / 2 + screenLeft, (screenHeight - windowHeight) / 2 + screenTop, windowWidth, windowHeight, 0);
             GetWindowRect(_window, out _windowRectangle);
             _windowSize = new SIZE { cx = _windowRectangle.right - _windowRectangle.left, cy = _windowRectangle.bottom - _windowRectangle.top };
         }
@@ -267,6 +298,9 @@ namespace SplashImage
                         SetPositionAndSize((int)(wParam.ToUInt32() >> 16));
                         DrawImage();
                         return IntPtr.Zero;
+                    case WindowsMessages.WM_NCHITTEST:
+                        var result = DefWindowProc(hWnd, msg, wParam, lParam);
+                        return result == (IntPtr)HitTestResults.HTCAPTION ? (IntPtr)HitTestResults.HTNOWHERE : result;
                     default:
                         return DefWindowProc(hWnd, msg, wParam, lParam);
                 }
